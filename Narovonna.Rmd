@@ -1,0 +1,406 @@
+---
+title: "Narovonna"
+output: html_document
+date: '2022-05-30'
+---
+
+## Analiza danych dotyczących ataków z użyciem broni palnej w Zjednoczonych Stanach Ameryki na przestrzeni lat 2013-2022
+
+### 1. Przygotowanie danych do analizy
+
+#### 1.1 Wczytanie potrzebnych pakietów
+
+```{r message=FALSE}
+defaultW <- getOption("warn") 
+options(warn = -1) 
+library(ggplot2)
+library(dplyr)
+library(ggthemes)
+library(extrafont)
+library(readr)
+library(readxl)
+library(reshape2)
+library(viridis)
+library(tidyr)
+```
+
+#### 1.2 Wgranie danych, na których będziemy operować 
+
+Jest to baza danych zawierająca informacje dotyczące ataków z użyciem broni palnej w latach 2013-2022 uzupełniona o informacje takie jak: numer zdarzenia, data, stan, miasto, adres, liczba osób zabitych oraz liczba osób rannych. Ostatnia aktualizacja z dnia 29.05.2022.
+
+```{r message=FALSE}
+strzelaniny <- read_excel("C:/Users/edyta/Desktop/all_incidents.xlsx")
+```
+
+#### 1.3 Usunięcie z bazy pustych kolumn
+
+```{r}
+strzelaniny <- strzelaniny[,-c(8:10)]
+glimpse(strzelaniny)
+```
+
+#### 1.4 Zmiana nazw zmiennych
+
+```{r}
+strzelaniny <- rename(strzelaniny, 
+                      numer_zdarzenia = incident_id, 
+                      data = date, 
+                      stan = state, 
+                      miasto = city, 
+                      adres = address, 
+                      liczba_zabitych = n_killed, 
+                      liczba_zranionych = n_injured)
+names(strzelaniny)
+```
+
+#### 1.5 Wybranie do analizy 10 najbardziej zaludnionych Stanów
+
+10 najbardziej zaludnionych stanów będzie wykorzystywanych do przeprowadzania analizy w rozdziałach 2-4
+
+```{r}
+stany <- c("California", "Texas", "New York", "Florida", "Pennsylvania", "Illinois", "Ohio", "Michigan", "Georgia", "North Carolina")
+strzelaniny1 <- strzelaniny %>% filter(stan %in% stany)
+```
+
+### 2. Analiza liczby ofiar śmiertelnych w 10 najbardziej zaludnionych stanach
+
+Pierwsza analiza zostanie przeprowadzona na zmiannych stany i liczba_zabitych
+
+#### 2.1 Utworzenie ramki danych ze zmiennych stany oraz liczba zabitych wraz ze zsumowaniem liczby zabitych dla każdego stanu
+
+```{r}
+strzelaniny1 <- strzelaniny1 %>% filter(liczba_zabitych > 0)
+stanyOfiary <- strzelaniny1 %>% group_by(stan) %>% summarise(liczba_zabitych = sum(liczba_zabitych)) %>%  as.data.frame()
+stanyOfiary <- arrange(stanyOfiary, liczba_zabitych, stany)
+stanyOfiary
+```
+
+#### 2.2 Przypisanie kolejności dla wartości w ramce danych celem utworzenia wykresu
+
+```{r}
+stanyOfiary$stan <- factor(stanyOfiary$stan, levels = stanyOfiary$stan[order(stanyOfiary$liczba_zabitych)])
+```
+
+#### 2.3 Utworzenie wykresu słupkowego
+
+```{r}
+wykresOfiary <- ggplot(stanyOfiary, aes(x = stan, y = liczba_zabitych)) + geom_col(fill = topo.colors(10)) +  coord_flip() + ggtitle("Liczba ofiar śmiertelnych w 10 najbardziej zaludnionych stanach") 
+wykresOfiary
+```
+
+#### 2.4 Wskazanie stanu z największą liczbą ofiar śmiertelnych
+
+```{r}
+top_n(stanyOfiary, 1)
+```
+
+#### 2.4 Wskazanie stanu z najmniejszą liczbą ofiar śmiertelnych
+
+```{r}
+top_n(stanyOfiary, -1)
+```
+
+### 3. Analiza liczby rannych ofiar w 10 najbardziej zaludnionych stanach
+
+Druga analiza zostanie przeprowadzona na zmiennych stany i liczba_zranionych
+
+#### 3.1 Utworzenie ramki danych ze zmiennych stany oraz liczba zranionych wraz ze zsumowaniem liczby zranionych dla każdego stanu
+
+```{r}
+strzelaniny2 <- strzelaniny1 %>% filter(liczba_zranionych > 0)
+stanyRanni <- strzelaniny2 %>% group_by(stan) %>% summarise(liczba_zranionych = sum(liczba_zranionych)) %>%  as.data.frame()
+stanyRanni <- arrange(stanyRanni, liczba_zranionych, stany)
+stanyRanni
+```
+
+#### 3.2 Przypisanie kolejności dla wartości w ramce danych celem utworzenia wykresu
+
+```{r}
+stanyRanni$stan <- factor(stanyRanni$stan, levels = stanyRanni$stan[order(stanyRanni$liczba_zranionych)])
+```
+
+#### 3.3 Utworzenie wykresu słupkowego
+
+```{r}
+wykresRanni <- ggplot(stanyRanni, aes(x = stan, y = liczba_zranionych )) + geom_col(fill = heat.colors(10)) +  coord_flip() + ggtitle("Największa ilość rannych ofiar w 10 najbardziej zaludnionych stanach")  
+wykresRanni
+```
+
+#### 3.4 Wskazanie stanu z największą liczbą rannych ofiar
+
+```{r}
+top_n(stanyRanni, 1)
+```
+
+#### 3.5 Wskazanie stanu z najmniejszą liczbą rannych ofiar
+
+```{r}
+top_n(stanyRanni, -1)
+```
+
+### 4. Analiza liczby masowych strzelanin w 10 najbardziej zaludnionych stanach
+
+Przyjęte zostało, że terminem masowa strzelanina określa się zdarzenia, w którym trafionych z broni zostaje więcej niż trzy osoby. W tym przypadku masową strzelaniną będzie określane zdarzenie, w którym więcej niż trzy osoby zostały zranione lub zabite.
+
+#### 4.1 Przygotowanie zmiennej liczba_trafionych i ustalenie kryteriów w celu przeprowadzenia analizy
+
+```{r}
+strzelaniny3 <- strzelaniny %>% filter(stan %in% stany)
+strzelaniny3 <- strzelaniny3 %>% mutate(liczba_trafionych = liczba_zabitych+liczba_zranionych)
+strzelaniny3 <- strzelaniny3 %>% filter(liczba_trafionych > 3)
+```
+
+#### 4.2 Utworzenie ramki danych ze zmiennych stany oraz liczba masowych strzelanin wraz ze zsumowaniem liczby masowych strzelanin
+
+```{r}
+masowe <- strzelaniny3 %>% group_by(stan) %>% summarise(liczba_masowych = length(liczba_trafionych)) %>%  as.data.frame()
+masowe <- arrange(masowe, liczba_masowych, stany)
+masowe
+```
+
+#### 4.3 Przypisanie kolejności dla wartości w ramce danych
+
+```{r}
+masowe$stan <- factor(masowe$stan, levels = masowe$stan[order(masowe$liczba_masowych)])
+```
+
+#### 4.4 Utworzenie wykresu punktowego
+
+```{r}
+wykresMasowe <- ggplot(masowe, aes(x = liczba_masowych, y = stan)) + geom_point(size = 6, colour = rainbow(10)) + geom_segment(aes(yend = stan, xend = 0))  + ggtitle("Ilość masowych strzelanin w 10 najbardziej zaludnionych stanach")  
+wykresMasowe
+```
+
+#### 4.5 Wskazanie stanu z największą liczbą masowych strzelanin
+
+```{r}
+top_n(masowe, 1)
+```
+
+#### 4.6 Wskazanie stanu z najmniejszą ilością masowych strzelanin
+
+```{r}
+top_n(masowe, -1)
+```
+
+### 5. Analiza strzelanin w stanie California
+
+W rozdziale 5 przeanalizujemy ataki z użyciem broni palnej w najbardziej zaludnionym stanie --- Californi. Dla uproszczenia pominiemy strzelaniny, w których nikt nie został zabity ani zraniony.
+
+#### 5.1 Utworzenie ramki danych z podziałem na miasta i liczbę ofiar śmiertelnych
+
+```{r}
+California1<- strzelaniny1 %>% select(stan, miasto, liczba_zabitych) %>% filter(liczba_zabitych>0, stan == "California") %>%  as.data.frame()
+California1 <- California1[-1]
+California1 <- aggregate(liczba_zabitych ~ miasto, California1, sum)
+glimpse(California1)
+```
+
+##### 5.1.2 Mediana i średnia liczby zabitych osób w miastach stanu California
+
+Ze względu na bardzo dużą liczbę miast w stanie California wyświetlamy tylko 5 pierwszych wyników.
+
+```{r}
+calOfiary <- California1 %>% group_by(miasto) %>% summarise(srednia = mean(liczba_zabitych), mediana = median(liczba_zabitych))  %>%  as.data.frame()
+head(calOfiary,5)
+```
+
+#### 5.2 Utworzenie ramki danych z podziałem na miasta i liczbę rannych ofiar
+
+```{r}
+California2<- strzelaniny1 %>% select(stan, miasto, liczba_zranionych) %>% filter(liczba_zranionych>0, stan == "California") %>%  as.data.frame()
+California2 <- California2[-1]
+California2 <- aggregate(liczba_zranionych ~ miasto, California2, sum)
+glimpse(California2)
+```
+
+##### 5.2.1 Mediana i średnia liczby zranionych osób w miastach stanu California
+
+```{r}
+calRanni <- California2 %>% group_by(miasto) %>% summarise(srednia = mean(liczba_zranionych), mediana = median(liczba_zranionych)) 
+head(calRanni,5)
+```
+
+#### 5.3 Wybranie 5 najbardziej zaludnionych miast stanu California
+
+Kolejne analizy w rozdziale 5 będą opierać się na 5 najbardziej zaludnionych miastach stanu California.
+
+```{r}
+miastaCal <- c("Los Angeles", "San Diego", "San Jose", "San Francisco", "Fresno")
+California3 <- California1 %>% filter( miasto %in% miastaCal)
+California4 <- California2 %>% filter( miasto %in% miastaCal)
+```
+
+#### 5.4 Analiza liczby zabitych osób w 5 najbardziej zaludnionych miastach stanu California
+
+##### 5.4.1 Utworzenie ramki danych ze zmiennych miasto oraz liczba zabitych wraz ze zsumowaniem liczby zabitych dla każdego miasta
+
+```{r}
+California3 <- California3 %>% filter(liczba_zabitych > 0)
+California3 <- California3 %>% group_by(miasto) %>% summarise(liczba_zabitych = sum(liczba_zabitych)) %>%  as.data.frame()
+California3 <- arrange(California3, liczba_zabitych)
+California3
+```
+
+##### 5.4.2 Przypisanie kolejności dla wartości w ramce danych
+
+```{r}
+California3$miasto <- factor(California3$miasto, levels = California3$miasto[order(California3$liczba_zabitych)])
+```
+
+##### 5.4.3 Utworzenie wykresu słupkowego
+
+```{r}
+wykresZabiciCalifornia <- ggplot(California3, aes(x = miasto, y = liczba_zabitych )) + geom_col(fill = viridis(5)) +  coord_flip() + ggtitle("Liczba zabitych w 5 najbardziej zaludnionych miastach stanu California")  
+wykresZabiciCalifornia
+```
+
+#### 5.5 Analiza liczby zranionych osób w 5 najbardziej zaludnionych miastach stanu California
+
+##### 5.5.1 Utworzenie ramki danych ze zmiennych miasto oraz liczba zranionych wraz ze zsumowaniem liczby zranionych dla każdego miasta
+
+```{r}
+California4 <- California4 %>% filter(liczba_zranionych > 0)
+California4 <- California4 %>% group_by(miasto) %>% summarise(liczba_zranionych = sum(liczba_zranionych)) %>%  as.data.frame()
+California4 <- arrange(California4, liczba_zranionych)
+California4
+```
+
+##### 5.5.2 Przypisanie kolejności dla wartości w ramce danych
+
+```{r}
+California4$miasto <- factor(California4$miasto, levels = California4$miasto[order(California4$liczba_zranionych)])
+```
+
+##### 5.5.3 Utworzenie wykresu słupkowego
+
+```{r}
+wykresRanniCalifornia <- ggplot(California4, aes(x = miasto, y = liczba_zranionych )) + geom_col(fill = plasma(5)) +  coord_flip() + ggtitle("Liczba rannych w 5 najbardziej zaludnionych miastach stanu California")  
+wykresRanniCalifornia
+```
+
+### 6. Analiza ilości strzelanin, ofiar śmiertelnych i zranionych osób
+
+```{r}
+sumaZabitych<- sum(strzelaniny[,6], na.rm = TRUE)
+sumaRannych<- sum(strzelaniny[,7], na.rm = TRUE)
+sumaPoszkodowanych<- sumaRannych+sumaZabitych
+liczbaStrzelanin<- nrow(strzelaniny[,1])
+liczbaStrzelanin
+sumaZabitych
+sumaRannych
+sumaPoszkodowanych
+```
+
+#### 6.1 Stosunek zmiennych do siebie
+
+```{r}
+sumaZabitych/liczbaStrzelanin
+sumaRannych/liczbaStrzelanin
+sumaPoszkodowanych/liczbaStrzelanin
+sumaZabitych/sumaRannych
+```
+
+Powyższe dane mogą świadczyć o tym, że stosunek liczby osób zabitych i rannych jest bardzo niewielki w porównaniu do samej liczby ataków z użyciem broni palnej, co jest z pewnością pozytywnym wynikiem.
+
+### 7. Analiza ataków z użyciem broni palnej na przestrzeni lat 2013-2022
+
+#### 7.1 Przygotowanie danych
+
+Przygotowane dane będą służyć do przeprowadzenia analiz w rozdziale 7.
+
+```{r}
+strzelaninyLata<- data.frame(strzelaniny[,c("data", "liczba_zabitych", "liczba_zranionych")])
+strzelaninyLata<- separate(strzelaninyLata, data, c("rok", "miesiac", "dzien"), "-")
+strzelaninyLata<- strzelaninyLata[,-c(2:3)]
+head(strzelaninyLata, 5)
+```
+
+#### 7.2  Analiza liczby ofiar śmiertelnych w latach 2013-2022
+
+##### 7.2.1 Utworzenie ramki danych ze zmiennych rok i liczba_zabitych ze zsumowaniem liczby ofiar śmiertelnych w każdym roku
+
+```{r}
+strzelaninyLata1 <- strzelaninyLata %>% filter(liczba_zabitych > 0)
+lataOfiary <- strzelaninyLata1 %>% group_by(rok) %>% summarise(liczba_zabitych = sum(liczba_zabitych)) %>%  as.data.frame()
+lataOfiary <- arrange(lataOfiary, liczba_zabitych, rok)
+lataOfiary
+```
+
+##### 7.2.2 Przypisanie kolejności dla wartości w ramce danych
+
+```{r}
+lataOfiary$rok <- factor(lataOfiary$rok, levels = lataOfiary$rok[order(lataOfiary$liczba_zabitych)])
+```
+
+##### 7.2.3 Utworzenie wykresu słupkowego
+
+```{r}
+wykresLataOfiary <- ggplot(lataOfiary, aes(x = rok, y = liczba_zabitych)) + geom_col(fill = magma(10))  +  coord_flip() + ggtitle("Liczba ofiar śmiertelnych w latach 2013-2022")  
+wykresLataOfiary
+```
+
+#### 7.3 Analiza liczby osób zranionych w latach 2013-2022
+
+##### 7.3.1 Utworzenie ramki danych ze zmiennych rok i liczba_zranionych ze zsumowaniem liczby rannych ofiar w każdym roku
+
+```{r}
+strzelaninyLata2 <- strzelaninyLata %>% filter(liczba_zranionych > 0)
+lataRanni <- strzelaninyLata2 %>% group_by(rok) %>% summarise(liczba_zranionych = sum(liczba_zranionych)) %>%  as.data.frame()
+lataRanni <- arrange(lataRanni, liczba_zranionych, rok)
+lataRanni
+```
+
+##### 7.3.2 Przypisanie kolejności dla wartości w ramce danych
+
+```{r}
+lataRanni$rok <- factor(lataRanni$rok, levels = lataRanni$rok[order(lataRanni$liczba_zranionych)])
+```
+
+##### 7.3.3 Utworzenie wykresu słupkowego dla 10 najbardziej zaludnionych stanów wg ilości rannych ofiar posortowanych w ilości malejącej
+
+```{r}
+wykresLataRanni <- ggplot(lataRanni, aes(x = rok, y = liczba_zranionych)) + geom_col(fill = inferno(10))  +  coord_flip() + ggtitle("Liczba rannych ofiar w latach 2013-2022")  
+wykresLataRanni
+```
+
+#### 7.4  Analiza liczby masowych strzelanin w latach 2013-2022
+
+##### 7.4.1 Dodanie kryterium definującego nową kolumnę
+
+```{r}
+strzelaninyLata3 <- strzelaninyLata %>% mutate(liczba_trafionych2 = liczba_zabitych+liczba_zranionych)
+strzelaninyLata3 <- strzelaninyLata3 %>% filter(liczba_trafionych2 > 3)
+```
+
+##### 7.4.2 Utworzenie ramki danych ze zmiennych rok oraz liczba masowych strzelanin wraz ze zsumowaniem liczby masowych strzelanin
+
+```{r}
+lataMasowe <- strzelaninyLata3 %>% group_by(rok) %>% summarise(liczba_masowych2 = length(liczba_trafionych2)) %>%  as.data.frame()
+lataMasowe <- arrange(lataMasowe, liczba_masowych2, rok)
+lataMasowe
+```
+
+##### 7.4.3 Przypisanie kolejności dla wartości w ramce danych
+
+```{r}
+lataMasowe$rok <- factor(lataMasowe$rok, levels = lataMasowe$rok[order(lataMasowe$liczba_masowych2)])
+```
+
+##### 7.4.4 Utworzenie wykresu punktowego
+
+```{r}
+wykresLataMasowe <- ggplot(lataMasowe, aes(x = liczba_masowych2, y = rok)) + geom_point(size = 6, colour = rainbow(10)) + geom_segment(aes(yend = rok, xend = 0))  + ggtitle("Liczba masowych strzelanin w latach 2013-2022")  
+wykresLataMasowe
+```
+
+### 8. Podsumowanie analizy danych
+W latach 2013-2022 odnotowano 472 820 ataków z użyciem broni palnej i 401 426 osób poszkodowanych; w tym: 125 707 ofiar śmiertelnych i 265 719 osób zranionych.
+Stan, w którym odnotowano najwięcej ofiar śmiertelnych i zranionych to California — 11 892 i 2749.
+Najwięcej ataków z użyciem broni palnej klasyfikujących się jako masowa strzelanina odnotowano w stanie Illinois w liczbie 452.
+W przypadku stanu California, który jest najbardziej zaludnionym stanem USA, najwięcej ofiar śmiertelnych odnotowano w Los Angeles (1287), podobnie z liczbą osób zranionych (304).
+Najwięcej ofiar śmiertelnych i zranionych odnotowano w roku 2021 w liczbach 20 921 i 40 569. W tym samym roku miało miejsce najwięcej masowych strzelanin — 827.
+
+```{r}
+options(warn = defaultW)
+```
